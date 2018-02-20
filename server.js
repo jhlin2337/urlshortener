@@ -13,8 +13,13 @@ var app = express();
 // Basic Configuration 
 var port = process.env.PORT || 3000;
 
-/** this project needs a db !! **/ 
+// Set up the database for the project
 mongoose.connect(process.env.MONGOLAB_URI);
+const shortcutSchema = mongoose.Schema({
+  shortcut: Number,
+  url: String
+});
+const Shortcut = mongoose.model('Shortcut', shortcutSchema);
 
 app.use(cors());
 
@@ -33,6 +38,8 @@ app.get("/api/hello", function (req, res) {
   res.json({greeting: 'hello API'});
 });
 
+
+let availableShortcutId = 0;
 app.post("/api/shorturl/new", function(req, res) {
   // If url is prefixed by https:// or http://, cut it to only include the url
   // from www. onward.
@@ -43,14 +50,44 @@ app.post("/api/shorturl/new", function(req, res) {
 
   // Use a dns lookup to see if the url the user inputted is valid
   dns.lookup(url, function(err, addresses) {
+  	// Handles the case where the url submitted does not exist
   	if (err) {
   	  res.json({error: "Invalid URL"});
-  	} else {
-	  res.json({
-	    original_url: req.body.url,
-	    short_url: 1
-	  });
+  	} else { // Handles the case where a valid url is submitted
+  	  // Saves the url and a shortcut id into the database
+  	  Shortcut.find({url: req.body.url}, function(err, sc) {
+  	  	if (err) return console.log(err);
+
+  	  	let shorturl = availableShortcutId;
+  	  	if (sc.length > 0) {
+  	  	  // If url is already in database, then retrieve the shortcut key for the url
+  	  	  shorturl = sc[0]['shortcut'];
+  	  	} else {
+  	  	  // If url is not in database, create new shortcut using the url and save
+  	  	  const sc = new Shortcut({shortcut: shorturl, url: req.body.url});
+  	  	  sc.save(function(err, sc) {
+  	  		if (err) return console.log(err);
+  	  	  });
+  	  	  availableShortcutId++;
+  	  	}
+
+  	  	// Load json containing submitted url and shortcut url
+	  	res.json({
+	      original_url: req.body.url,
+	      short_url: shorturl
+	  	});
+  	  });
 	}
+  });
+});
+
+app.get("/api/shorturl/:shortcut", function(req, res) {
+  Shortcut.find({shortcut: req.params.shortcut}, function(err, sc) {
+  	if (err) {
+  	  res.json({error: "No short url found for given input"})
+  	} else {
+  	  res.redirect(sc[0].url);
+  	}
   });
 });
 
